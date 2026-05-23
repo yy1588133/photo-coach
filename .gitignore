@@ -1,0 +1,7 @@
+.helloagents/
+.claude/skills/helloagents
+.gemini/skills/helloagents
+.codex/skills/helloagents
+AGENTS.md
+CLAUDE.md
+.gemini/GEMINI.md
