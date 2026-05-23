@@ -1,0 +1,78 @@
+.report-section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  margin-bottom: 0.75rem;
+  overflow: hidden;
+  background: var(--card-bg);
+  transition: border-color var(--transition);
+}
+
+.report-section.open {
+  border-color: var(--amber-glow);
+}
+
+.section-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  background: none;
+  color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 500;
+  gap: 0.75rem;
+  min-height: var(--min-touch);
+}
+
+.section-header .dim-title {
+  flex: 1;
+  text-align: left;
+}
+
+.section-header .dim-stars {
+  color: var(--amber);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.section-header .chevron {
+  color: var(--text-secondary);
+  transition: transform var(--transition);
+  flex-shrink: 0;
+}
+
+.report-section.open .chevron {
+  transform: rotate(180deg);
+  color: var(--amber);
+}
+
+.section-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+
+.report-section.open .section-body {
+  max-height: 2000px;
+}
+
+.section-content {
+  padding: 0 1.25rem 1.25rem;
+  color: var(--text);
+  font-size: 0.9rem;
+  line-height: 1.7;
+}
+
+.section-content strong {
+  color: var(--amber);
+  font-weight: 600;
+}
+
+.section-content p {
+  margin-bottom: 0.75rem;
+}
+
+.section-content p:last-child {
+  margin-bottom: 0;
+}

@@ -5,3 +5,22 @@
 AGENTS.md
 CLAUDE.md
 .gemini/GEMINI.md
+
+# Dependencies
+node_modules/
+
+# Build output (will be rebuilt on deploy)
+frontend/dist/
+
+# Environment (contains secrets)
+backend/.env
+
+# Python
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+Thumbs.db
+...
+path/

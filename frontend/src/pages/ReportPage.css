@@ -1,0 +1,160 @@
+.report-page {
+  min-height: 100dvh;
+  padding-bottom: 5rem;
+  background: var(--bg);
+}
+
+.report-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--bg);
+  padding: 1rem 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+}
+
+.report-header h2 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--amber);
+}
+
+.report-meta {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+/* ---- score cards ---- */
+.score-section {
+  padding: 1.25rem;
+}
+
+.score-section h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  color: var(--text);
+}
+
+.score-scroll {
+  display: flex;
+  gap: 0.75rem;
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+
+.score-scroll > * {
+  scroll-snap-align: start;
+  flex-shrink: 0;
+}
+
+/* ---- core direction ---- */
+.core-direction {
+  margin: 0 1.25rem 1.5rem;
+  padding: 1rem 1.25rem;
+  background: var(--amber-dim);
+  border-left: 3px solid var(--amber);
+  border-radius: 0 var(--radius-btn) var(--radius-btn) 0;
+}
+
+.core-direction .label {
+  font-size: 0.8rem;
+  color: var(--amber);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
+}
+
+.core-direction p {
+  color: var(--text);
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+/* ---- diagnosis accordion ---- */
+.diagnosis-section {
+  padding: 0 1.25rem;
+}
+
+.diagnosis-section h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  color: var(--text);
+}
+
+/* ---- summary ---- */
+.report-summary {
+  margin: 1.5rem 1.25rem;
+  padding: 1.25rem;
+  background: var(--card-bg);
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border);
+}
+
+.report-summary h3 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--amber);
+  margin-bottom: 0.75rem;
+}
+
+.report-summary p {
+  color: var(--text);
+  font-size: 0.95rem;
+  line-height: 1.7;
+}
+
+/* ---- bottom action ---- */
+.bottom-action {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 1rem 1.25rem;
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  background: linear-gradient(transparent, var(--bg) 40%);
+}
+
+.btn-next {
+  width: 100%;
+  background: var(--amber);
+  color: #0d0d0d;
+  font-weight: 600;
+  font-size: 1rem;
+  border-radius: var(--radius-btn);
+  padding: 0 1.5rem;
+  letter-spacing: 0.02em;
+}
+
+.btn-next:hover {
+  background: #f0a34e;
+}
+
+/* ---- empty / error state ---- */
+.report-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60dvh;
+  gap: 1rem;
+  padding: 2rem;
+  text-align: center;
+}
+
+.report-empty p {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+.report-empty .btn-retry {
+  margin-top: 0.5rem;
+  max-width: 200px;
+}

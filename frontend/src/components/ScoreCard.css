@@ -1,0 +1,44 @@
+.score-card {
+  width: 140px;
+  padding: 1rem;
+  background: var(--card-bg);
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  transition: border-color var(--transition), background var(--transition);
+}
+
+.score-card:hover {
+  border-color: var(--amber-glow);
+  background: var(--card-bg-hover);
+}
+
+.score-card.na {
+  opacity: 0.5;
+}
+
+.score-card .dim-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.score-card .stars {
+  font-size: 0.85rem;
+  letter-spacing: 2px;
+  color: var(--amber);
+}
+
+.score-card .stars.na-text {
+  color: var(--text-secondary);
+  letter-spacing: 0;
+  font-size: 0.8rem;
+}
+
+.score-card .comment {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}

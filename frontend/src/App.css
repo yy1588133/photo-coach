@@ -1,0 +1,110 @@
+:root {
+  --bg: #0d0d0d;
+  --card-bg: #1a1a1a;
+  --card-bg-hover: #222222;
+  --text: #f5f0eb;
+  --text-secondary: #8a8580;
+  --amber: #e8943a;
+  --amber-dim: rgba(232, 148, 58, 0.12);
+  --amber-glow: rgba(232, 148, 58, 0.25);
+  --border: #2a2a2a;
+  --border-light: #333333;
+  --danger: #e05555;
+  --success: #4caf50;
+  --radius-card: 12px;
+  --radius-btn: 8px;
+  --min-touch: 48px;
+  --transition: 0.2s ease;
+}
+
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  min-height: 100dvh;
+  overflow-x: hidden;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  outline: none;
+  min-height: var(--min-touch);
+  min-width: var(--min-touch);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+  border-radius: var(--radius-btn);
+  transition: background var(--transition), opacity var(--transition);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
+input {
+  font-family: inherit;
+  font-size: 0.95rem;
+  outline: none;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-btn);
+  background: var(--bg);
+  color: var(--text);
+  padding: 0.75rem 1rem;
+  min-height: var(--min-touch);
+  transition: border-color var(--transition);
+  width: 100%;
+}
+
+input:focus {
+  border-color: var(--amber);
+}
+
+input::placeholder {
+  color: var(--text-secondary);
+}
+
+a {
+  color: var(--amber);
+  text-decoration: none;
+}
+
+/* scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-light);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}
