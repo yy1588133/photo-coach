@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: photo-coach-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    rootDir: backend
+    envVars:
+      - key: DEFAULT_PROVIDER
+        value: anthropic
+      - key: DEFAULT_MODEL
+        value: claude-sonnet-4-20250514
+      - key: DEFAULT_API_KEY
+        sync: false
+      - key: DEFAULT_BASE_URL
+        sync: false
