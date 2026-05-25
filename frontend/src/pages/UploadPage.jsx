@@ -44,10 +44,6 @@ export default function UploadPage() {
         setError("请选择一张图片文件");
         return;
       }
-      if (f.size > 15 * 1024 * 1024) {
-        setError("图片大小不能超过 15MB");
-        return;
-      }
       setError(null);
       setFile(f);
       const url = URL.createObjectURL(f);
@@ -248,7 +244,7 @@ export default function UploadPage() {
       )}
 
       {/* 支持格式 */}
-      <p className="format-list">支持 JPEG / PNG / WebP / HEIC，最大 15MB</p>
+      <p className="format-list">支持 JPEG / PNG / WebP / HEIC，超大图片将自动压缩</p>
 
       {/* 设置按钮 */}
       <button
