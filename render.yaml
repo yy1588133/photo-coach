@@ -1,12 +1,16 @@
 services:
   - type: web
-    name: photo-coach-api
+    name: photo-coach
     runtime: python
     plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     rootDir: backend
+    buildCommand: |
+      pip install -r requirements.txt
+      cd ../frontend && npm install && npm run build
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
+      - key: ENVIRONMENT
+        value: production
       - key: DEFAULT_PROVIDER
         value: anthropic
       - key: DEFAULT_MODEL

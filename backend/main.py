@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 # 加载 .env 文件（如果存在），优先级从高到低
 env_paths = [
@@ -210,3 +211,10 @@ async def analyze_photo(
 async def health_check():
     """健康检查接口。"""
     return {"status": "ok", "service": "Photo Coach API", "version": "1.0.0"}
+
+
+# 生产环境：serve 前端 SPA（API 路由未匹配时 fallback 到静态文件）
+if os.getenv("ENVIRONMENT") == "production":
+    static_dir = Path(__file__).parent.parent / "frontend" / "dist"
+    if static_dir.exists():
+        app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
