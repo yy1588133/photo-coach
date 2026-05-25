@@ -3,10 +3,10 @@ import { useState, useCallback } from "react";
 const STORAGE_KEY = "photo-coach-settings";
 
 const DEFAULTS = {
-  provider: "anthropic",
+  provider: "",
   apiKey: "",
   baseUrl: "",
-  model: "claude-sonnet-4-20250514",
+  model: "",
 };
 
 export function useSettings() {
