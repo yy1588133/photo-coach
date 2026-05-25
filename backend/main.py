@@ -2,6 +2,7 @@
 Photo Coach — FastAPI 后端入口。
 提供 POST /api/analyze 接口，接收照片文件和引擎参数，返回 AI 诊断报告。
 """
+import json
 import re
 import os
 from io import BytesIO
@@ -27,6 +28,12 @@ for env_path in env_paths:
 from adapters.openai_adapter import call_openai_vision
 from adapters.anthropic_adapter import call_anthropic_vision
 from prompts.diagnosis import SYSTEM_PROMPT, USER_MESSAGE_TEMPLATE
+from prompts.challenge_judge import (
+    SYSTEM_PROMPT_CHALLENGE,
+    USER_MESSAGE_TEMPLATE_CHALLENGE,
+)
+from exif_analyzer import parse_exif as parse_exif_data, analyze_params
+from challenges import get_daily_challenge, get_challenge_by_id
 
 app = FastAPI(title="Photo Coach API", version="1.0.0")
 
@@ -176,6 +183,33 @@ def parse_scores_from_report(report: str) -> list[dict]:
     return scores
 
 
+def parse_annotations(report: str) -> list[dict]:
+    """从报告中解析标注区域数据。"""
+    annotations = []
+    # 匹配 ## 标注区域 之后的表格
+    section_match = re.search(r"##\s*标注区域\s*\n(.+)", report, re.DOTALL)
+    if not section_match:
+        return annotations
+
+    section = section_match.group(1)
+    # 解析表格行：| type | label | position | description |
+    rows = re.findall(
+        r"\|\s*(overexposed|underexposed|blur|composition)\s*\|"
+        r"\s*(.+?)\s*\|"
+        r"\s*(.+?)\s*\|"
+        r"\s*(.+?)\s*\|",
+        section,
+    )
+    for row in rows:
+        annotations.append({
+            "type": row[0].strip(),
+            "label": row[1].strip(),
+            "position": row[2].strip(),
+            "description": row[3].strip(),
+        })
+    return annotations
+
+
 @app.post("/api/analyze")
 async def analyze_photo(
     image: UploadFile = File(...),
@@ -272,10 +306,18 @@ async def analyze_photo(
     # 解析得分
     scores = parse_scores_from_report(report)
 
+    # 解析标注
+    annotations = parse_annotations(report)
+
+    # 提取 EXIF
+    exif = parse_exif_data(image_bytes)
+
     return {
         "success": True,
         "report": report,
         "scores": scores,
+        "annotations": annotations,
+        "exif": exif,
         "meta": {
             "provider": engine_provider,
             "model": engine_model,
@@ -284,6 +326,171 @@ async def analyze_photo(
             "compressed": compress_info["compressed"],
             "original_size_mb": round(original_size_mb, 2),
         },
+    }
+
+
+@app.get("/api/challenge/today")
+async def challenge_today():
+    """返回今日挑战任务。"""
+    challenge = get_daily_challenge()
+    return {"success": True, "challenge": challenge}
+
+
+@app.post("/api/challenge/judge")
+async def challenge_judge(
+    image: UploadFile = File(...),
+    challenge_id: str = Form(...),
+    provider: str | None = Form(None),
+    model: str | None = Form(None),
+    api_key: str | None = Form(None),
+    base_url: str | None = Form(None),
+):
+    """评判挑战照片。"""
+    challenge = get_challenge_by_id(challenge_id)
+    if not challenge:
+        raise HTTPException(status_code=404, detail=f"挑战不存在: {challenge_id}")
+
+    mime_type = image.content_type or "image/jpeg"
+    if mime_type not in ALLOWED_MIME_TYPES:
+        raise HTTPException(status_code=400, detail=f"不支持的文件类型: {mime_type}")
+
+    image_bytes = await image.read()
+    if len(image_bytes) > MAX_IMAGE_SIZE_BYTES:
+        image_bytes, _ = compress_image(image_bytes, MAX_IMAGE_SIZE_MB)
+        mime_type = "image/jpeg"
+
+    if len(image_bytes) == 0:
+        raise HTTPException(status_code=400, detail="上传的文件为空")
+
+    engine_provider = provider or os.getenv("DEFAULT_PROVIDER", "anthropic")
+    engine_model = model or os.getenv("DEFAULT_MODEL", "claude-sonnet-4-20250514")
+    engine_api_key = api_key or os.getenv("DEFAULT_API_KEY", "")
+    engine_base_url = base_url or os.getenv("DEFAULT_BASE_URL", "") or None
+
+    if not engine_api_key:
+        raise HTTPException(status_code=400, detail="未配置 API Key")
+
+    user_message = USER_MESSAGE_TEMPLATE_CHALLENGE.format(
+        title=challenge["title"],
+        description=challenge["description"],
+        criteria=challenge["criteria"],
+    )
+
+    try:
+        if engine_provider == "openai":
+            result_text = await call_openai_vision(
+                image_bytes=image_bytes,
+                mime_type=mime_type,
+                system_prompt=SYSTEM_PROMPT_CHALLENGE,
+                user_message=user_message,
+                model=engine_model,
+                api_key=engine_api_key,
+                base_url=engine_base_url,
+            )
+        else:
+            result_text = await call_anthropic_vision(
+                image_bytes=image_bytes,
+                mime_type=mime_type,
+                system_prompt=SYSTEM_PROMPT_CHALLENGE,
+                user_message=user_message,
+                model=engine_model,
+                api_key=engine_api_key,
+                base_url=engine_base_url,
+            )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"AI API 调用失败: {str(e)}")
+
+    # 尝试解析 JSON 响应
+    try:
+        result_text = result_text.strip()
+        if result_text.startswith("```"):
+            result_text = re.sub(r"^```\w*\n?", "", result_text)
+            result_text = re.sub(r"\n?```$", "", result_text)
+        result = json.loads(result_text)
+    except json.JSONDecodeError:
+        result = {
+            "passed": False,
+            "comment": "AI 返回格式异常，请重试",
+            "highlights": [],
+            "suggestions": [],
+        }
+
+    return {
+        "success": True,
+        "challenge_id": challenge_id,
+        "judgment": result,
+    }
+
+
+@app.post("/api/params/analyze")
+async def params_analyze(
+    photos_data: str = Form(...),
+    provider: str | None = Form(None),
+    model: str | None = Form(None),
+    api_key: str | None = Form(None),
+    base_url: str | None = Form(None),
+):
+    """多张照片参数关联分析。"""
+    try:
+        photos = json.loads(photos_data)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="photos_data 不是有效的 JSON")
+
+    if not photos or len(photos) < 2:
+        raise HTTPException(status_code=400, detail="至少需要 2 张照片的参数数据")
+
+    summary = analyze_params(photos)
+
+    system_prompt = """你是一位摄影数据分析师。根据用户提供的多张照片 EXIF 参数数据，分析参数规律并给出建议。
+
+输出格式要求：
+1. 找出用户最常使用的参数组合
+2. 分析不同场景/时段下的参数变化规律
+3. 给出具体的参数调整建议
+用中文回复，简洁专业，不超过 500 字。"""
+
+    user_message = f"""以下是我多张照片的 EXIF 参数数据：
+
+{summary}
+
+请分析我的拍摄参数规律，并给出改进建议。"""
+
+    engine_provider = provider or os.getenv("DEFAULT_PROVIDER", "anthropic")
+    engine_model = model or os.getenv("DEFAULT_MODEL", "claude-sonnet-4-20250514")
+    engine_api_key = api_key or os.getenv("DEFAULT_API_KEY", "")
+    engine_base_url = base_url or os.getenv("DEFAULT_BASE_URL", "") or None
+
+    if not engine_api_key:
+        raise HTTPException(status_code=400, detail="未配置 API Key")
+
+    try:
+        if engine_provider == "openai":
+            analysis = await call_openai_vision(
+                image_bytes=None,
+                mime_type=None,
+                system_prompt=system_prompt,
+                user_message=user_message,
+                model=engine_model,
+                api_key=engine_api_key,
+                base_url=engine_base_url,
+            )
+        else:
+            analysis = await call_anthropic_vision(
+                image_bytes=None,
+                mime_type=None,
+                system_prompt=system_prompt,
+                user_message=user_message,
+                model=engine_model,
+                api_key=engine_api_key,
+                base_url=engine_base_url,
+            )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"AI API 调用失败: {str(e)}")
+
+    return {
+        "success": True,
+        "photos_count": len(photos),
+        "analysis": analysis,
     }
 
 

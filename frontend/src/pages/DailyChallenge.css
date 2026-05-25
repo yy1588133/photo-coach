@@ -1,0 +1,218 @@
+.challenge-page {
+  min-height: 100dvh;
+  background: var(--bg);
+  padding: 1.5rem;
+}
+
+.challenge-container {
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.challenge-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.challenge-header h2 {
+  font-size: 1.3rem;
+  color: var(--amber);
+}
+
+.btn-back {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-height: 40px;
+  padding: 0 0.75rem;
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-btn);
+}
+
+.btn-back:hover {
+  color: var(--text);
+  background: var(--card-bg-hover);
+}
+
+/* 挑战卡片 */
+.challenge-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-card);
+  padding: 1.5rem;
+  position: relative;
+}
+
+.challenge-badge {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  margin-bottom: 0.75rem;
+}
+
+.difficulty-1 { background: rgba(76, 175, 80, 0.15); color: var(--success); }
+.difficulty-2 { background: var(--amber-dim); color: var(--amber); }
+.difficulty-3 { background: rgba(224, 85, 85, 0.15); color: var(--danger); }
+
+.challenge-card h3 {
+  font-size: 1.15rem;
+  margin-bottom: 0.5rem;
+}
+
+.challenge-desc {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  margin-bottom: 0.75rem;
+}
+
+.challenge-criteria {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  opacity: 0.85;
+}
+
+.challenge-criteria strong {
+  color: var(--amber);
+}
+
+/* 上传区域 */
+.challenge-upload {
+  margin-top: 1rem;
+  padding: 2rem;
+  border: 2px dashed var(--border-light);
+  border-radius: var(--radius-card);
+  text-align: center;
+  cursor: pointer;
+  transition: border-color var(--transition), background var(--transition);
+  color: var(--text-secondary);
+}
+
+.challenge-upload:hover {
+  border-color: var(--amber);
+  background: var(--amber-dim);
+}
+
+.challenge-upload.has-file {
+  border-style: solid;
+}
+
+/* 评判结果 */
+.judge-result {
+  margin-top: 1.5rem;
+  padding: 1.5rem;
+  border-radius: var(--radius-card);
+  background: var(--card-bg);
+  border: 1px solid var(--border-light);
+}
+
+.judge-result.passed {
+  border-color: var(--success);
+}
+
+.judge-result.failed {
+  border-color: var(--border-light);
+}
+
+.result-verdict {
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin-bottom: 0.75rem;
+}
+
+.judge-result.passed .result-verdict {
+  color: var(--success);
+}
+
+.judge-result.failed .result-verdict {
+  color: var(--amber);
+}
+
+.result-comment {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  margin-bottom: 0.75rem;
+}
+
+.result-list {
+  margin-top: 0.5rem;
+}
+
+.result-list strong {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--text);
+  margin-bottom: 0.25rem;
+}
+
+.result-list li {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-left: 1rem;
+  margin-bottom: 0.2rem;
+}
+
+.result-list.suggestions li {
+  color: var(--amber);
+}
+
+/* 历史记录 */
+.challenge-history {
+  margin-top: 2rem;
+}
+
+.challenge-history h4 {
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.75rem;
+}
+
+.history-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: var(--radius-btn);
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  margin-bottom: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.history-item.passed { border-left: 3px solid var(--success); }
+.history-item.failed { border-left: 3px solid var(--amber); }
+
+.history-date {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.history-title {
+  flex: 1;
+  color: var(--text);
+}
+
+.history-badge {
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.history-item.passed .history-badge { color: var(--success); }
+.history-item.failed .history-badge { color: var(--amber); }
+
+@media (max-width: 480px) {
+  .challenge-page {
+    padding: 1rem;
+  }
+
+  .challenge-card {
+    padding: 1rem;
+  }
+}
