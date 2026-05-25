@@ -13,8 +13,14 @@ async def call_anthropic_vision(
 ) -> str:
     """调用 Anthropic 兼容 Messages API，以 base64 图片分析并返回诊断文本。"""
     if base_url is None or base_url.strip() == "":
-        base_url = "https://api.anthropic.com/v1"
+        base_url = "https://api.anthropic.com"
     base_url = base_url.rstrip("/")
+
+    # 智能拼接 /v1：如果用户提供的 base_url 已包含 /v1 则不重复
+    if base_url.endswith("/v1"):
+        url = f"{base_url}/messages"
+    else:
+        url = f"{base_url}/v1/messages"
 
     b64 = base64.b64encode(image_bytes).decode("utf-8")
 
@@ -47,9 +53,7 @@ async def call_anthropic_vision(
     }
 
     async with httpx.AsyncClient(timeout=120) as client:
-        resp = await client.post(
-            f"{base_url}/messages", json=payload, headers=headers
-        )
+        resp = await client.post(url, json=payload, headers=headers)
         resp.raise_for_status()
         body = resp.json()
         return body["content"][0]["text"]

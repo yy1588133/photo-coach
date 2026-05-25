@@ -1,6 +1,7 @@
 import base64
 import httpx
 
+
 async def call_openai_vision(
     image_bytes: bytes,
     mime_type: str,
@@ -12,8 +13,14 @@ async def call_openai_vision(
 ) -> str:
     """调用 OpenAI 兼容 Vision API，以 base64 图片分析并返回诊断文本。"""
     if base_url is None or base_url.strip() == "":
-        base_url = "https://api.openai.com/v1"
+        base_url = "https://api.openai.com"
     base_url = base_url.rstrip("/")
+
+    # 智能拼接 /v1：如果用户提供的 base_url 已包含 /v1 则不重复
+    if base_url.endswith("/v1"):
+        url = f"{base_url}/chat/completions"
+    else:
+        url = f"{base_url}/v1/chat/completions"
 
     # base64 编码图片
     b64 = base64.b64encode(image_bytes).decode("utf-8")
@@ -41,7 +48,7 @@ async def call_openai_vision(
     }
 
     async with httpx.AsyncClient(timeout=120) as client:
-        resp = await client.post(f"{base_url}/chat/completions", json=payload, headers=headers)
+        resp = await client.post(url, json=payload, headers=headers)
         resp.raise_for_status()
         body = resp.json()
         return body["choices"][0]["message"]["content"]
