@@ -1,7 +1,11 @@
 .report-page {
   min-height: 100dvh;
-  padding-bottom: 5rem;
   background: var(--bg);
+}
+
+.report-container {
+  max-width: 900px;
+  margin: 0 auto;
 }
 
 .report-header {
@@ -42,15 +46,29 @@
 .score-scroll {
   display: flex;
   gap: 0.75rem;
-  overflow-x: auto;
-  padding-bottom: 0.5rem;
-  scroll-snap-type: x mandatory;
-  -webkit-overflow-scrolling: touch;
+  flex-wrap: wrap;
 }
 
 .score-scroll > * {
-  scroll-snap-align: start;
-  flex-shrink: 0;
+  flex: 1 1 160px;
+  min-width: 160px;
+}
+
+/* 小屏：横向滚动 */
+@media (max-width: 639px) {
+  .score-scroll {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 0.5rem;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .score-scroll > * {
+    flex: 0 0 auto;
+    min-width: 160px;
+    scroll-snap-align: start;
+  }
 }
 
 /* ---- core direction ---- */
@@ -113,13 +131,8 @@
 
 /* ---- bottom action ---- */
 .bottom-action {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  padding: 1rem 1.25rem;
-  padding-bottom: max(1rem, env(safe-area-inset-bottom));
-  background: linear-gradient(transparent, var(--bg) 40%);
+  padding: 1.5rem 1.25rem;
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
 }
 
 .btn-next {

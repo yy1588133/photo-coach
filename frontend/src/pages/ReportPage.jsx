@@ -128,11 +128,13 @@ export default function ReportPage() {
   if (!reportData) {
     return (
       <div className="report-page">
-        <div className="report-empty">
-          <p>暂无诊断报告</p>
-          <button className="btn-retry" onClick={() => navigate("/")}>
-            返回上传照片
-          </button>
+        <div className="report-container">
+          <div className="report-empty">
+            <p>暂无诊断报告</p>
+            <button className="btn-retry" onClick={() => navigate("/")}>
+              返回上传照片
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -154,8 +156,9 @@ export default function ReportPage() {
 
   return (
     <div className="report-page">
-      {/* 顶栏 */}
-      <div className="report-header">
+      <div className="report-container">
+        {/* 顶栏 */}
+        <div className="report-header">
         <div>
           <h2>诊断报告</h2>
           {meta && (
@@ -224,6 +227,7 @@ export default function ReportPage() {
         <button className="btn-next" onClick={handleNewAnalysis}>
           📤 分析下一张
         </button>
+      </div>
       </div>
     </div>
   );
