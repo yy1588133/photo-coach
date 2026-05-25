@@ -1,15 +1,7 @@
 .report-page {
   min-height: 100dvh;
-  padding-bottom: 2rem;
+  padding-bottom: 5rem;
   background: var(--bg);
-}
-
-/* 桌面端居中 + 最大宽度 */
-@media (min-width: 768px) {
-  .report-page {
-    max-width: 900px;
-    margin: 0 auto;
-  }
 }
 
 .report-header {
@@ -37,7 +29,7 @@
 
 /* ---- score cards ---- */
 .score-section {
-  padding: 1.25rem 1.25rem 0.5rem;
+  padding: 1.25rem;
 }
 
 .score-section h3 {
@@ -50,38 +42,15 @@
 .score-scroll {
   display: flex;
   gap: 0.75rem;
+  overflow-x: auto;
   padding-bottom: 0.5rem;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
 }
 
-/* 桌面端：换行不滚动 */
-@media (min-width: 768px) {
-  .score-scroll {
-    flex-wrap: wrap;
-    overflow-x: visible;
-  }
-
-  .score-scroll > * {
-    flex: 1 1 calc(20% - 0.6rem);
-    min-width: 150px;
-    max-width: none;
-  }
-}
-
-/* 移动端：横向滚动，卡片稍宽 */
-@media (max-width: 767px) {
-  .score-scroll {
-    overflow-x: auto;
-    scroll-snap-type: x mandatory;
-    -webkit-overflow-scrolling: touch;
-    /* 滚动条指示 */
-    padding-bottom: 0.75rem;
-  }
-
-  .score-scroll > * {
-    scroll-snap-align: start;
-    flex-shrink: 0;
-    width: 160px;
-  }
+.score-scroll > * {
+  scroll-snap-align: start;
+  flex-shrink: 0;
 }
 
 /* ---- core direction ---- */
@@ -142,9 +111,15 @@
   line-height: 1.7;
 }
 
-/* ---- bottom action (document flow, not fixed) ---- */
+/* ---- bottom action ---- */
 .bottom-action {
-  margin: 2rem 1.25rem 1rem;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 1rem 1.25rem;
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  background: linear-gradient(transparent, var(--bg) 40%);
 }
 
 .btn-next {
@@ -160,21 +135,6 @@
 
 .btn-next:hover {
   background: #f0a34e;
-}
-
-/* ---- btn-new ---- */
-.btn-new {
-  background: var(--card-bg);
-  color: var(--text);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-btn);
-  padding: 0.4rem 1rem;
-  font-size: 0.85rem;
-  transition: background var(--transition);
-}
-
-.btn-new:hover {
-  background: var(--card-bg-hover);
 }
 
 /* ---- empty / error state ---- */
