@@ -1,12 +1,13 @@
 .score-card {
-  width: 140px;
+  min-width: 150px;
+  flex: 1 1 auto;
   padding: 1rem;
   background: var(--card-bg);
   border-radius: var(--radius-card);
   border: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.4rem;
   transition: border-color var(--transition), background var(--transition);
 }
 
@@ -20,15 +21,17 @@
 }
 
 .score-card .dim-name {
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   font-weight: 600;
   color: var(--text);
+  white-space: nowrap;
 }
 
 .score-card .stars {
-  font-size: 0.85rem;
-  letter-spacing: 2px;
+  font-size: 0.9rem;
+  letter-spacing: 1px;
   color: var(--amber);
+  white-space: nowrap;
 }
 
 .score-card .stars.na-text {
@@ -40,5 +43,7 @@
 .score-card .comment {
   font-size: 0.8rem;
   color: var(--text-secondary);
-  line-height: 1.4;
+  line-height: 1.45;
+  /* 不截断，允许换行 */
+  word-break: break-word;
 }
