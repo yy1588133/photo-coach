@@ -50,51 +50,63 @@ ALLOWED_MIME_TYPES = {
 
 
 def parse_scores_from_report(report: str) -> list[dict]:
-    """从 Markdown 报告中解析评分总览表格，提取得分卡数据。"""
+    """从 Markdown 报告中解析得分总览表格，提取得分卡数据。"""
     scores = []
     dimension_names = [
         "构图", "曝光", "色彩", "对焦", "锐度",
         "白平衡", "面部表情", "眼神", "肢体语言", "整体印象",
     ]
 
-    # 尝试匹配表格行：| 维度名 | ⭐⭐⭐⭐ | 简评 |
-    table_pattern = r"\|\s*(.+?)\s*\|\s*(⭐+)\s*\|\s*(.+?)\s*\|"
-    matches = re.findall(table_pattern, report)
+    # 先用主表格模式批量匹配数值分数行
+    # 使用 [ \t] 而非 \s，防止跨行匹配
+    table_pattern = r"\|[ \t]*(.+?)[ \t]*\|[ \t]*(\d+)[ \t]*分?[ \t]*\|[ \t]*(.+?)[ \t]*\|"
+    table_matches = re.findall(table_pattern, report)
 
-    for match in matches:
+    found_names = set()
+    for match in table_matches:
         dim_name = match[0].strip()
-        stars = match[1].strip()
+        try:
+            score = int(match[1].strip())
+        except ValueError:
+            score = 0
         comment = match[2].strip()
-
-        score = len(stars)  # 每个 ⭐ 算 1 分
         scores.append({
             "name": dim_name,
             "score": score,
-            "stars": stars,
             "comment": comment,
         })
+        found_names.add(dim_name)
 
-    # 如果表格解析失败，用维度名称兜底匹配
-    if not scores:
-        for dim_name in dimension_names:
-            pattern = rf"{dim_name}\s*\|\s*(⭐+)\s*\|\s*(.+?)(?:\||$)"
-            m = re.search(pattern, report)
-            if m:
-                stars = m.group(1).strip()
-                comment = m.group(2).strip()
-                scores.append({
-                    "name": dim_name,
-                    "score": len(stars),
-                    "stars": stars,
-                    "comment": comment,
-                })
-            else:
-                scores.append({
-                    "name": dim_name,
-                    "score": 0,
-                    "stars": "N/A",
-                    "comment": "无法解析",
-                })
+    # 对未匹配到的维度，逐行兜底（含 N/A 分值处理）
+    for dim_name in dimension_names:
+        if dim_name in found_names:
+            continue
+        # 先尝试匹配数值分数
+        num_pattern = rf"{dim_name}[ \t]*\|[ \t]*(\d+)[ \t]*分?[ \t]*\|[ \t]*(.+?)(?:\||$)"
+        m = re.search(num_pattern, report)
+        if m:
+            scores.append({
+                "name": dim_name,
+                "score": int(m.group(1).strip()),
+                "comment": m.group(2).strip(),
+            })
+            continue
+        # 再尝试匹配 N/A 分值
+        na_pattern = rf"{dim_name}[ \t]*\|[ \t]*N/?A[ \t]*\|[ \t]*(.+?)(?:\||$)"
+        m = re.search(na_pattern, report, re.IGNORECASE)
+        if m:
+            scores.append({
+                "name": dim_name,
+                "score": 0,
+                "comment": m.group(1).strip(),
+            })
+            continue
+        # 完全无法解析
+        scores.append({
+            "name": dim_name,
+            "score": 0,
+            "comment": "无法解析",
+        })
 
     return scores
 
@@ -120,7 +132,7 @@ async def analyze_photo(
         {
             "success": true,
             "report": "Markdown 格式的完整诊断报告",
-            "scores": [{name, score, stars, comment}, ...],
+            "scores": [{name, score, comment}, ...],
             "meta": {provider, model, image_size_mb, mime_type}
         }
     """

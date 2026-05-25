@@ -73,15 +73,17 @@ function parseSections(report) {
   for (const part of parts) {
     const lines = part.trim().split("\n");
     const titleLine = lines[0].replace(/^## /, "").trim();
-    // 提取评分（⭐）
-    const starsMatch = titleLine.match(/^(⭐+)\s*/);
-    const stars = starsMatch ? starsMatch[1] : null;
-    const title = stars ? titleLine.slice(stars.length).trim() : titleLine;
+    // 提取分数 (XX分)
+    const scoreMatch = titleLine.match(/\((\d+)分\)/);
+    const score = scoreMatch ? parseInt(scoreMatch[1], 10) : 0;
+    const title = scoreMatch
+      ? titleLine.replace(/\(\d+分\)/, "").trim()
+      : titleLine;
     const body = lines.slice(1).join("\n").trim();
     if (body) {
       sections.push({
         title,
-        stars,
+        score,
         html: mdToHtml(body),
       });
     }
@@ -90,14 +92,15 @@ function parseSections(report) {
 }
 
 /**
- * 提取"一句话核心改进方向"
+ * 提取"核心改进方向"
  */
 function extractCoreDirection(report) {
   if (!report) return null;
+  // 匹配 ### 核心改进方向 下的 🎯 内容
   const m = report.match(
-    /## 💡\s*一句话核心改进方向\s*\n+(.+?)(?:\n##|\n*$)/s,
+    /###\s*核心改进方向\s*\n+(.+?)(?:\n###|\n*$)/s,
   );
-  return m ? m[1].trim() : null;
+  return m ? m[1].trim().replace(/^>\s*/, "").replace(/^🎯\s*/, "") : null;
 }
 
 export default function ReportPage() {
@@ -182,7 +185,6 @@ export default function ReportPage() {
                 key={i}
                 name={s.name}
                 score={s.score}
-                stars={s.stars}
                 comment={s.comment}
               />
             ))}
@@ -215,7 +217,7 @@ export default function ReportPage() {
             <ReportSection
               key={i}
               title={sec.title}
-              stars={sec.stars}
+              score={sec.score}
               content={sec.html}
             />
           ))}

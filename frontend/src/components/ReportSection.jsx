@@ -1,13 +1,13 @@
 import { useState } from "react";
 
-export default function ReportSection({ title, stars, content }) {
+export default function ReportSection({ title, score, content }) {
   const [open, setOpen] = useState(false);
 
   return (
     <div className={`report-section${open ? " open" : ""}`}>
       <button className="section-header" onClick={() => setOpen(!open)}>
         <span className="dim-title">{title}</span>
-        {stars && <span className="dim-stars">{stars}</span>}
+        {score > 0 && <span className="dim-score">{score}分</span>}
         <svg
           className="chevron"
           width="20"
