@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import ScoreCard from "../components/ScoreCard";
 import ReportSection from "../components/ReportSection";
+import AnnotationOverlay from "../components/AnnotationOverlay";
 import "./ReportPage.css";
 
 /**
@@ -108,6 +109,8 @@ export default function ReportPage() {
   const [reportData, setReportData] = useState(null);
   const [sections, setSections] = useState([]);
   const [coreDirection, setCoreDirection] = useState(null);
+  const [activeTab, setActiveTab] = useState("report");
+  const [imageUrl, setImageUrl] = useState(null);
 
   useEffect(() => {
     const stored = localStorage.getItem("photo-coach-report");
@@ -120,10 +123,13 @@ export default function ReportPage() {
     } catch {
       // ignore
     }
+    const img = localStorage.getItem("photo-coach-image");
+    if (img) setImageUrl(img);
   }, []);
 
   const handleNewAnalysis = () => {
     localStorage.removeItem("photo-coach-report");
+    localStorage.removeItem("photo-coach-image");
     navigate("/");
   };
 
@@ -143,7 +149,7 @@ export default function ReportPage() {
     );
   }
 
-  const { scores, meta } = reportData;
+  const { scores, meta, exif, annotations } = reportData;
 
   // 过滤"基本信息"section，单独展示
   const infoSection = sections.find(
@@ -157,79 +163,140 @@ export default function ReportPage() {
       !s.title.includes("得分卡"),
   );
 
+  // EXIF 参数展示行
+  const exifRow = [];
+  if (exif) {
+    if (exif.aperture) exifRow.push(exif.aperture);
+    if (exif.shutter_speed) exifRow.push(exif.shutter_speed);
+    if (exif.iso) exifRow.push(`ISO ${exif.iso}`);
+    if (exif.focal_length) exifRow.push(exif.focal_length);
+    if (exif.camera) exifRow.push(exif.camera);
+  }
+
   return (
     <div className="report-page">
       <div className="report-container">
         {/* 顶栏 */}
         <div className="report-header">
-        <div>
-          <h2>诊断报告</h2>
-          {meta && (
-            <p className="report-meta">
-              {meta.model} · {meta.image_size_mb}MB
-            </p>
-          )}
-        </div>
-        <button className="btn-new" onClick={handleNewAnalysis}>
-          新分析
-        </button>
-      </div>
-
-      {/* 得分卡 */}
-      {scores && scores.length > 0 && (
-        <div className="score-section">
-          <h3>得分总览</h3>
-          <div className="score-scroll">
-            {scores.map((s, i) => (
-              <ScoreCard
-                key={i}
-                name={s.name}
-                score={s.score}
-                comment={s.comment}
-              />
-            ))}
+          <div>
+            <h2>诊断报告</h2>
+            {meta && (
+              <p className="report-meta">
+                {meta.model} · {meta.image_size_mb}MB
+                {exifRow.length > 0 && (
+                  <span className="report-exif-row">
+                    {" "}·{" "}
+                    {exifRow.map((v, i) => (
+                      <span key={i} className="exif-tag">
+                        {v}
+                      </span>
+                    ))}
+                  </span>
+                )}
+              </p>
+            )}
           </div>
+          <button className="btn-new" onClick={handleNewAnalysis}>
+            新分析
+          </button>
         </div>
-      )}
 
-      {/* 一句话核心改进方向 */}
-      {coreDirection && (
-        <div className="core-direction">
-          <div className="label">💡 核心改进方向</div>
-          <p>{coreDirection}</p>
+        {/* Tab 切换 */}
+        <div className="visual-tabs">
+          <button
+            className={`visual-tab${activeTab === "report" ? " active" : ""}`}
+            onClick={() => setActiveTab("report")}
+          >
+            诊断报告
+          </button>
+          <button
+            className={`visual-tab${activeTab === "visual" ? " active" : ""}`}
+            onClick={() => setActiveTab("visual")}
+          >
+            可视化诊断
+            {annotations && annotations.length > 0 && (
+              <span className="tab-badge">{annotations.length}</span>
+            )}
+          </button>
         </div>
-      )}
 
-      {/* 基本信息摘要 */}
-      {infoSection && (
-        <div className="report-summary">
-          <div
-            dangerouslySetInnerHTML={{ __html: infoSection.html }}
-          />
+        {/* 诊断报告 tab */}
+        {activeTab === "report" && (
+          <>
+            {/* 得分卡 */}
+            {scores && scores.length > 0 && (
+              <div className="score-section">
+                <h3>得分总览</h3>
+                <div className="score-scroll">
+                  {scores.map((s, i) => (
+                    <ScoreCard
+                      key={i}
+                      name={s.name}
+                      score={s.score}
+                      comment={s.comment}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 一句话核心改进方向 */}
+            {coreDirection && (
+              <div className="core-direction">
+                <div className="label">💡 核心改进方向</div>
+                <p>{coreDirection}</p>
+              </div>
+            )}
+
+            {/* 基本信息摘要 */}
+            {infoSection && (
+              <div className="report-summary">
+                <div
+                  dangerouslySetInnerHTML={{ __html: infoSection.html }}
+                />
+              </div>
+            )}
+
+            {/* 诊断详情（折叠面板） */}
+            {diagnosisSections.length > 0 && (
+              <div className="diagnosis-section">
+                <h3>详细诊断</h3>
+                {diagnosisSections.map((sec, i) => (
+                  <ReportSection
+                    key={i}
+                    title={sec.title}
+                    score={sec.score}
+                    content={sec.html}
+                  />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* 可视化诊断 tab */}
+        {activeTab === "visual" && (
+          <div className="visual-panel">
+            {imageUrl ? (
+              <AnnotationOverlay
+                imageUrl={imageUrl}
+                annotations={annotations || []}
+              />
+            ) : (
+              <div className="annotation-empty">
+                <p>无法加载原始照片</p>
+                <span>请从上传页重新分析以查看可视化诊断</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 底部操作 */}
+        <div className="bottom-action">
+          <button className="btn-next" onClick={handleNewAnalysis}>
+            📤 分析下一张
+          </button>
         </div>
-      )}
-
-      {/* 诊断详情（折叠面板） */}
-      {diagnosisSections.length > 0 && (
-        <div className="diagnosis-section">
-          <h3>详细诊断</h3>
-          {diagnosisSections.map((sec, i) => (
-            <ReportSection
-              key={i}
-              title={sec.title}
-              score={sec.score}
-              content={sec.html}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* 底部操作 */}
-      <div className="bottom-action">
-        <button className="btn-next" onClick={handleNewAnalysis}>
-          📤 分析下一张
-        </button>
-      </div>
       </div>
     </div>
   );

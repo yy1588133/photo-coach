@@ -133,7 +133,7 @@ export default function DailyChallenge() {
 
         {/* 今日挑战卡片 */}
         <div className="challenge-card">
-          <div className="challenge-badge difficulty-{challenge.difficulty}">
+          <div className={`challenge-badge difficulty-${challenge.difficulty}`}>
             {DIFFICULTY_LABELS[challenge.difficulty] || "未知"}
           </div>
           <h3>{challenge.title}</h3>

@@ -31,6 +31,79 @@
   color: var(--text-secondary);
 }
 
+/* EXIF 参数标签行 */
+.report-exif-row {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  align-items: center;
+}
+
+.exif-tag {
+  display: inline-block;
+  font-size: 0.72rem;
+  color: var(--amber);
+  background: var(--amber-dim);
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+/* ---- tab 切换 ---- */
+.visual-tabs {
+  display: flex;
+  gap: 0;
+  margin: 0 1.25rem;
+  margin-top: 1rem;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-btn);
+  overflow: hidden;
+}
+
+.visual-tab {
+  flex: 1;
+  padding: 0.6rem 1rem;
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: 0;
+  min-height: 40px;
+  font-size: 0.85rem;
+  transition: background var(--transition), color var(--transition);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+}
+
+.visual-tab.active {
+  background: var(--amber);
+  color: #0d0d0d;
+}
+
+.visual-tab:hover:not(.active) {
+  background: var(--card-bg-hover);
+  color: var(--text);
+}
+
+.tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.2);
+  line-height: 1;
+}
+
+/* ---- visual diagnosis panel ---- */
+.visual-panel {
+  padding: 1rem 1.25rem;
+}
+
 /* ---- score cards ---- */
 .score-section {
   padding: 1.25rem;
@@ -68,6 +141,34 @@
     flex: 0 0 auto;
     min-width: 160px;
     scroll-snap-align: start;
+  }
+}
+
+/* 中屏：2 列固定网格 */
+@media (min-width: 640px) and (max-width: 899px) {
+  .score-scroll {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+  }
+
+  .score-scroll > * {
+    min-width: 0;
+    flex: none;
+  }
+}
+
+/* 宽屏：多列自适应 */
+@media (min-width: 900px) {
+  .score-scroll {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 0.75rem;
+  }
+
+  .score-scroll > * {
+    min-width: 0;
+    flex: none;
   }
 }
 

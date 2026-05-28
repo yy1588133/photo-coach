@@ -80,8 +80,12 @@ def _format_focal(raw: float | str | None) -> str | None:
     return f"{int(round(val))}mm"
 
 
-def parse_exif(image_bytes: bytes) -> dict:
+def parse_exif(image_bytes: bytes, pil_image=None) -> dict:
     """解析图片 EXIF 数据，返回标准化参数字典。
+
+    Args:
+        image_bytes: 原始图片字节
+        pil_image: 可选，已打开的 PIL Image 对象，避免重复打开
 
     Returns:
         {
@@ -96,7 +100,7 @@ def parse_exif(image_bytes: bytes) -> dict:
         无 EXIF 数据时返回空字典。
     """
     try:
-        img = Image.open(BytesIO(image_bytes))
+        img = pil_image if pil_image is not None else Image.open(BytesIO(image_bytes))
         raw = img._getexif()
         if raw is None:
             return {}

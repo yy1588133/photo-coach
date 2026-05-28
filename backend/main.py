@@ -1,21 +1,45 @@
 """
-Photo Coach — FastAPI 后端入口。
-提供 POST /api/analyze 接口，接收照片文件和引擎参数，返回 AI 诊断报告。
+Photo Coach — FastAPI backend (production-hardened).
+
+Features:
+- POST /api/analyze       — photo diagnosis (10-dimension)
+- GET  /api/challenge/today
+- POST /api/challenge/judge
+- POST /api/params/analyze — multi-photo EXIF analysis
+- POST /api/extract-exif
+- GET  /api/health         — liveness + readiness
+- Rate limiting (per-IP, 60 req/min)
+- Request-ID tracing + structured logging
+- AI adapter: timeout + retry
+- Graceful shutdown
 """
+import asyncio
 import json
-import re
+import logging
 import os
+import re
+import signal
+import time
+from contextlib import asynccontextmanager
 from io import BytesIO
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, UploadFile, HTTPException
+from fastapi import FastAPI, File, Form, Request, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
 
-# 加载 .env 文件（如果存在），优先级从高到低
+# ---------------------------------------------------------------------------
+# Early init
+# ---------------------------------------------------------------------------
+from logging_config import setup_logging, set_request_id, get_request_id
+
+setup_logging()
+logger = logging.getLogger(__name__)
+
+# Load .env
 env_paths = [
     Path(__file__).parent / ".env",
     Path(__file__).parent / ".env.example",
@@ -25,6 +49,37 @@ for env_path in env_paths:
         load_dotenv(env_path, encoding="utf-8")
         break
 
+# ---------------------------------------------------------------------------
+# Application
+# ---------------------------------------------------------------------------
+app = FastAPI(title="Photo Coach API", version="1.1.0")
+
+# CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Rate limit middleware
+from rate_limiter import rate_limit_middleware
+
+app.middleware("http")(rate_limit_middleware)
+
+# Request-ID middleware
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    rid = request.headers.get("X-Request-ID") or set_request_id()
+    set_request_id(rid)
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = get_request_id()
+    return response
+
+# ---------------------------------------------------------------------------
+# Imports (after app init so logging works)
+# ---------------------------------------------------------------------------
 from adapters.openai_adapter import call_openai_vision
 from adapters.anthropic_adapter import call_anthropic_vision
 from prompts.diagnosis import SYSTEM_PROMPT, USER_MESSAGE_TEMPLATE
@@ -35,20 +90,11 @@ from prompts.challenge_judge import (
 from exif_analyzer import parse_exif as parse_exif_data, analyze_params
 from challenges import get_daily_challenge, get_challenge_by_id
 
-app = FastAPI(title="Photo Coach API", version="1.0.0")
-
-# CORS 全开（MVP 阶段）
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# 配置
-MAX_IMAGE_SIZE_MB = 15
-MAX_IMAGE_SIZE_BYTES = MAX_IMAGE_SIZE_MB * 1024 * 1024
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+MAX_IMAGE_SIZE_MB = float(os.getenv("MAX_IMAGE_SIZE_MB", "15"))
+MAX_IMAGE_SIZE_BYTES = int(MAX_IMAGE_SIZE_MB * 1024 * 1024)
 ALLOWED_MIME_TYPES = {
     "image/jpeg",
     "image/png",
@@ -56,13 +102,131 @@ ALLOWED_MIME_TYPES = {
     "image/heic",
     "image/heif",
 }
+AI_TIMEOUT = float(os.getenv("AI_TIMEOUT_SECONDS", "120"))
+AI_MAX_RETRIES = int(os.getenv("AI_MAX_RETRIES", "2"))
+
+
+# ---------------------------------------------------------------------------
+# Graceful shutdown
+# ---------------------------------------------------------------------------
+_shutting_down = False
+
+
+def _install_signal_handlers():
+    """Handle SIGTERM / SIGINT for graceful shutdown."""
+
+    def _handler(sig, _frame):
+        global _shutting_down
+        if not _shutting_down:
+            _shutting_down = True
+            logger.info("Received signal %s, starting graceful shutdown...", sig)
+
+    signal.signal(signal.SIGTERM, _handler)
+    signal.signal(signal.SIGINT, _handler)
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    _install_signal_handlers()
+    yield
+    global _shutting_down
+    _shutting_down = True
+    logger.info("Lifespan shutdown — draining in-flight requests...")
+
+app.router.lifespan_context = lifespan
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+def _resolve_engine(provider, model, api_key, base_url):
+    """Resolve engine config: request params > env vars > defaults."""
+    return (
+        provider or os.getenv("DEFAULT_PROVIDER", "anthropic"),
+        model or os.getenv("DEFAULT_MODEL", "claude-sonnet-4-20250514"),
+        api_key or os.getenv("DEFAULT_API_KEY", ""),
+        base_url or os.getenv("DEFAULT_BASE_URL", "") or None,
+    )
+
+
+def _validate_engine(provider, api_key):
+    if not api_key:
+        raise HTTPException(status_code=400, detail="未配置 API Key")
+    if provider not in ("openai", "anthropic"):
+        raise HTTPException(status_code=400, detail=f"不支持的 provider: {provider}。支持: openai, anthropic")
+
+
+async def _call_ai(provider, image_bytes, mime_type, system_prompt, user_message,
+                   model, api_key, base_url):
+    """Route AI call to correct adapter with timeout + retries."""
+    try:
+        if provider == "openai":
+            return await call_openai_vision(
+                image_bytes=image_bytes,
+                mime_type=mime_type,
+                system_prompt=system_prompt,
+                user_message=user_message,
+                model=model,
+                api_key=api_key,
+                base_url=base_url,
+                timeout=AI_TIMEOUT,
+                max_retries=AI_MAX_RETRIES,
+            )
+        else:
+            return await call_anthropic_vision(
+                image_bytes=image_bytes,
+                mime_type=mime_type,
+                system_prompt=system_prompt,
+                user_message=user_message,
+                model=model,
+                api_key=api_key,
+                base_url=base_url,
+                timeout=AI_TIMEOUT,
+                max_retries=AI_MAX_RETRIES,
+            )
+    except Exception as e:
+        logger.error("AI call failed: provider=%s model=%s error=%s", provider, model, str(e))
+        raise HTTPException(status_code=502, detail=f"AI API 调用失败: {str(e)}")
+
+
+async def _read_and_validate_image(image: UploadFile) -> tuple[bytes, str, float, dict, float, Image.Image]:
+    """Read image bytes, validate, compress if needed. Returns (bytes, mime_type, size_mb, compress_info, original_size_mb, pil_image)."""
+    mime_type = image.content_type or "image/jpeg"
+    if mime_type not in ALLOWED_MIME_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"不支持的文件类型: {mime_type}。支持: {', '.join(sorted(ALLOWED_MIME_TYPES))}",
+        )
+
+    image_bytes = await image.read()
+    if len(image_bytes) == 0:
+        raise HTTPException(status_code=400, detail="上传的文件为空")
+
+    original_size_mb = len(image_bytes) / (1024 * 1024)
+
+    # Open once so EXIF parsing can reuse this object
+    pil_image = Image.open(BytesIO(image_bytes))
+
+    compress_info = {"compressed": False}
+    image_size_mb = original_size_mb
+
+    if len(image_bytes) > MAX_IMAGE_SIZE_BYTES:
+        image_bytes, compress_info = compress_image(image_bytes, MAX_IMAGE_SIZE_MB)
+        mime_type = "image/jpeg"
+        image_size_mb = len(image_bytes) / (1024 * 1024)
+        logger.info(
+            "Image compressed: %.1fMB -> %.1fMB (quality=%s, resized=%s)",
+            original_size_mb,
+            image_size_mb,
+            compress_info.get("quality"),
+            compress_info.get("resized_to"),
+        )
+
+    return image_bytes, mime_type, image_size_mb, compress_info, original_size_mb, pil_image
 
 
 def compress_image(image_bytes: bytes, max_mb: float = 15) -> tuple[bytes, dict]:
-    """压缩图片到目标大小以内，返回 (图片字节, 压缩信息)。
-
-    策略：先降质量（85→30），仍超限则逐步缩小尺寸，最低长边 1024px、质量 30%。
-    """
+    """Compress image to target size. Returns (bytes, info)."""
     max_size = int(max_mb * 1024 * 1024)
     original_size = len(image_bytes)
 
@@ -73,7 +237,7 @@ def compress_image(image_bytes: bytes, max_mb: float = 15) -> tuple[bytes, dict]
     if img.mode in ("RGBA", "LA", "P"):
         img = img.convert("RGB")
 
-    # 阶段一：仅降质量（保持原始分辨率）
+    # Phase 1: reduce quality only
     for quality in (85, 75, 65, 55, 45, 35, 30):
         buf = BytesIO()
         img.save(buf, format="JPEG", quality=quality, optimize=True)
@@ -84,7 +248,7 @@ def compress_image(image_bytes: bytes, max_mb: float = 15) -> tuple[bytes, dict]
                 "quality": quality,
             }
 
-    # 阶段二：缩放 + 降质量
+    # Phase 2: scale down + reduce quality
     long_edge = max(img.width, img.height)
     for scale in (0.8, 0.6, 0.5, 0.4, 0.3):
         new_long = int(long_edge * scale)
@@ -106,7 +270,7 @@ def compress_image(image_bytes: bytes, max_mb: float = 15) -> tuple[bytes, dict]
                     "resized_to": list(new_size),
                 }
 
-    # 阶段三：兜底 — 1024px 长边 + 质量 30
+    # Phase 3: fallback — 1024px long edge, quality 30
     if long_edge > 1024:
         ratio = 1024 / long_edge
         new_size = (int(img.width * ratio), int(img.height * ratio))
@@ -122,15 +286,13 @@ def compress_image(image_bytes: bytes, max_mb: float = 15) -> tuple[bytes, dict]
 
 
 def parse_scores_from_report(report: str) -> list[dict]:
-    """从 Markdown 报告中解析得分总览表格，提取得分卡数据。"""
+    """Parse score overview table from Markdown report."""
     scores = []
     dimension_names = [
         "构图", "曝光", "色彩", "对焦", "锐度",
         "白平衡", "面部表情", "眼神", "肢体语言", "整体印象",
     ]
 
-    # 先用主表格模式批量匹配数值分数行
-    # 使用 [ \t] 而非 \s，防止跨行匹配
     table_pattern = r"\|[ \t]*(.+?)[ \t]*\|[ \t]*(\d+)[ \t]*分?[ \t]*\|[ \t]*(.+?)[ \t]*\|"
     table_matches = re.findall(table_pattern, report)
 
@@ -142,59 +304,37 @@ def parse_scores_from_report(report: str) -> list[dict]:
         except ValueError:
             score = 0
         comment = match[2].strip()
-        scores.append({
-            "name": dim_name,
-            "score": score,
-            "comment": comment,
-        })
+        scores.append({"name": dim_name, "score": score, "comment": comment})
         found_names.add(dim_name)
 
-    # 对未匹配到的维度，逐行兜底（含 N/A 分值处理）
     for dim_name in dimension_names:
         if dim_name in found_names:
             continue
-        # 先尝试匹配数值分数
         num_pattern = rf"{dim_name}[ \t]*\|[ \t]*(\d+)[ \t]*分?[ \t]*\|[ \t]*(.+?)(?:\||$)"
         m = re.search(num_pattern, report)
         if m:
-            scores.append({
-                "name": dim_name,
-                "score": int(m.group(1).strip()),
-                "comment": m.group(2).strip(),
-            })
+            scores.append({"name": dim_name, "score": int(m.group(1).strip()), "comment": m.group(2).strip()})
             continue
-        # 再尝试匹配 N/A 分值
         na_pattern = rf"{dim_name}[ \t]*\|[ \t]*N/?A[ \t]*\|[ \t]*(.+?)(?:\||$)"
         m = re.search(na_pattern, report, re.IGNORECASE)
         if m:
-            scores.append({
-                "name": dim_name,
-                "score": 0,
-                "comment": m.group(1).strip(),
-            })
+            scores.append({"name": dim_name, "score": 0, "comment": m.group(1).strip()})
             continue
-        # 完全无法解析
-        scores.append({
-            "name": dim_name,
-            "score": 0,
-            "comment": "无法解析",
-        })
+        scores.append({"name": dim_name, "score": 0, "comment": "无法解析"})
 
     return scores
 
 
 def parse_annotations(report: str) -> list[dict]:
-    """从报告中解析标注区域数据。"""
+    """Parse annotation region data from report."""
     annotations = []
-    # 匹配 ## 标注区域 之后的表格
     section_match = re.search(r"##\s*标注区域\s*\n(.+)", report, re.DOTALL)
     if not section_match:
         return annotations
 
     section = section_match.group(1)
-    # 解析表格行：| type | label | position | description |
     rows = re.findall(
-        r"\|\s*(overexposed|underexposed|blur|composition)\s*\|"
+        r"\|\s*(\w+)\s*\|"
         r"\s*(.+?)\s*\|"
         r"\s*(.+?)\s*\|"
         r"\s*(.+?)\s*\|",
@@ -210,6 +350,10 @@ def parse_annotations(report: str) -> list[dict]:
     return annotations
 
 
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+
 @app.post("/api/analyze")
 async def analyze_photo(
     image: UploadFile = File(...),
@@ -218,99 +362,30 @@ async def analyze_photo(
     api_key: str | None = Form(None),
     base_url: str | None = Form(None),
 ):
-    """分析上传的照片，返回 AI 诊断报告。
+    """Analyze uploaded photo — returns AI diagnosis report with scores, annotations, EXIF."""
+    logger.info("POST /api/analyze filename=%s content_type=%s", image.filename, image.content_type)
 
-    参数：
-        image: 照片文件（必填，超大图片会自动压缩，支持 JPEG/PNG/WebP/HEIC）
-        provider: LLM 提供商（"openai" 或 "anthropic"，可选，默认读取 .env）
-        model: 模型名称（可选，默认读取 .env）
-        api_key: API 密钥（可选，默认读取 .env）
-        base_url: 自定义 API 地址（可选，默认读取 .env）
+    image_bytes, mime_type, image_size_mb, compress_info, original_size_mb, pil_image = await _read_and_validate_image(image)
 
-    返回：
-        {
-            "success": true,
-            "report": "Markdown 格式的完整诊断报告",
-            "scores": [{name, score, comment}, ...],
-            "meta": {provider, model, image_size_mb, mime_type}
-        }
-    """
-    # 校验文件类型
-    mime_type = image.content_type or "image/jpeg"
-    if mime_type not in ALLOWED_MIME_TYPES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"不支持的文件类型: {mime_type}。支持: {', '.join(sorted(ALLOWED_MIME_TYPES))}",
-        )
+    engine_provider, engine_model, engine_api_key, engine_base_url = _resolve_engine(
+        provider, model, api_key, base_url
+    )
+    _validate_engine(engine_provider, engine_api_key)
 
-    # 读取图片字节并校验大小，超限自动压缩
-    image_bytes = await image.read()
-    image_size_mb = len(image_bytes) / (1024 * 1024)
-    original_size_mb = image_size_mb
-    compress_info = {"compressed": False}
+    report = await _call_ai(
+        engine_provider, image_bytes, mime_type,
+        SYSTEM_PROMPT, USER_MESSAGE_TEMPLATE,
+        engine_model, engine_api_key, engine_base_url,
+    )
 
-    if len(image_bytes) > MAX_IMAGE_SIZE_BYTES:
-        image_bytes, compress_info = compress_image(image_bytes, MAX_IMAGE_SIZE_MB)
-        mime_type = "image/jpeg"
-        image_size_mb = len(image_bytes) / (1024 * 1024)
-
-    if len(image_bytes) == 0:
-        raise HTTPException(status_code=400, detail="上传的文件为空")
-
-    # 解析引擎配置（优先级：请求参数 > 环境变量）
-    engine_provider = provider or os.getenv("DEFAULT_PROVIDER", "anthropic")
-    engine_model = model or os.getenv("DEFAULT_MODEL", "claude-sonnet-4-20250514")
-    engine_api_key = api_key or os.getenv("DEFAULT_API_KEY", "")
-    engine_base_url = base_url or os.getenv("DEFAULT_BASE_URL", "") or None
-
-    if not engine_api_key:
-        raise HTTPException(
-            status_code=400,
-            detail="未配置 API Key。请在请求中提供 api_key 参数，或在 .env 中设置 DEFAULT_API_KEY",
-        )
-
-    if engine_provider not in ("openai", "anthropic"):
-        raise HTTPException(
-            status_code=400,
-            detail=f"不支持的 provider: {engine_provider}。支持: openai, anthropic",
-        )
-
-    # 调用适配器
-    try:
-        if engine_provider == "openai":
-            report = await call_openai_vision(
-                image_bytes=image_bytes,
-                mime_type=mime_type,
-                system_prompt=SYSTEM_PROMPT,
-                user_message=USER_MESSAGE_TEMPLATE,
-                model=engine_model,
-                api_key=engine_api_key,
-                base_url=engine_base_url,
-            )
-        else:
-            report = await call_anthropic_vision(
-                image_bytes=image_bytes,
-                mime_type=mime_type,
-                system_prompt=SYSTEM_PROMPT,
-                user_message=USER_MESSAGE_TEMPLATE,
-                model=engine_model,
-                api_key=engine_api_key,
-                base_url=engine_base_url,
-            )
-    except Exception as e:
-        raise HTTPException(
-            status_code=502,
-            detail=f"AI API 调用失败: {str(e)}",
-        )
-
-    # 解析得分
     scores = parse_scores_from_report(report)
-
-    # 解析标注
     annotations = parse_annotations(report)
+    exif = parse_exif_data(image_bytes, pil_image=pil_image)
 
-    # 提取 EXIF
-    exif = parse_exif_data(image_bytes)
+    logger.info(
+        "POST /api/analyze OK provider=%s model=%s scores=%d annotations=%d exif_keys=%d",
+        engine_provider, engine_model, len(scores), len(annotations), len(exif),
+    )
 
     return {
         "success": True,
@@ -331,8 +406,9 @@ async def analyze_photo(
 
 @app.get("/api/challenge/today")
 async def challenge_today():
-    """返回今日挑战任务。"""
+    """Return today's challenge (deterministic rotation)."""
     challenge = get_daily_challenge()
+    logger.info("GET /api/challenge/today id=%s", challenge["id"])
     return {"success": True, "challenge": challenge}
 
 
@@ -345,30 +421,19 @@ async def challenge_judge(
     api_key: str | None = Form(None),
     base_url: str | None = Form(None),
 ):
-    """评判挑战照片。"""
+    """Judge a challenge submission photo."""
+    logger.info("POST /api/challenge/judge challenge_id=%s filename=%s", challenge_id, image.filename)
+
     challenge = get_challenge_by_id(challenge_id)
     if not challenge:
         raise HTTPException(status_code=404, detail=f"挑战不存在: {challenge_id}")
 
-    mime_type = image.content_type or "image/jpeg"
-    if mime_type not in ALLOWED_MIME_TYPES:
-        raise HTTPException(status_code=400, detail=f"不支持的文件类型: {mime_type}")
+    image_bytes, mime_type, image_size_mb, _, _, _ = await _read_and_validate_image(image)
 
-    image_bytes = await image.read()
-    if len(image_bytes) > MAX_IMAGE_SIZE_BYTES:
-        image_bytes, _ = compress_image(image_bytes, MAX_IMAGE_SIZE_MB)
-        mime_type = "image/jpeg"
-
-    if len(image_bytes) == 0:
-        raise HTTPException(status_code=400, detail="上传的文件为空")
-
-    engine_provider = provider or os.getenv("DEFAULT_PROVIDER", "anthropic")
-    engine_model = model or os.getenv("DEFAULT_MODEL", "claude-sonnet-4-20250514")
-    engine_api_key = api_key or os.getenv("DEFAULT_API_KEY", "")
-    engine_base_url = base_url or os.getenv("DEFAULT_BASE_URL", "") or None
-
-    if not engine_api_key:
-        raise HTTPException(status_code=400, detail="未配置 API Key")
+    engine_provider, engine_model, engine_api_key, engine_base_url = _resolve_engine(
+        provider, model, api_key, base_url
+    )
+    _validate_engine(engine_provider, engine_api_key)
 
     user_message = USER_MESSAGE_TEMPLATE_CHALLENGE.format(
         title=challenge["title"],
@@ -376,31 +441,12 @@ async def challenge_judge(
         criteria=challenge["criteria"],
     )
 
-    try:
-        if engine_provider == "openai":
-            result_text = await call_openai_vision(
-                image_bytes=image_bytes,
-                mime_type=mime_type,
-                system_prompt=SYSTEM_PROMPT_CHALLENGE,
-                user_message=user_message,
-                model=engine_model,
-                api_key=engine_api_key,
-                base_url=engine_base_url,
-            )
-        else:
-            result_text = await call_anthropic_vision(
-                image_bytes=image_bytes,
-                mime_type=mime_type,
-                system_prompt=SYSTEM_PROMPT_CHALLENGE,
-                user_message=user_message,
-                model=engine_model,
-                api_key=engine_api_key,
-                base_url=engine_base_url,
-            )
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"AI API 调用失败: {str(e)}")
+    result_text = await _call_ai(
+        engine_provider, image_bytes, mime_type,
+        SYSTEM_PROMPT_CHALLENGE, user_message,
+        engine_model, engine_api_key, engine_base_url,
+    )
 
-    # 尝试解析 JSON 响应
     try:
         result_text = result_text.strip()
         if result_text.startswith("```"):
@@ -408,6 +454,7 @@ async def challenge_judge(
             result_text = re.sub(r"\n?```$", "", result_text)
         result = json.loads(result_text)
     except json.JSONDecodeError:
+        logger.warning("Challenge judge response not valid JSON: %.200s", result_text)
         result = {
             "passed": False,
             "comment": "AI 返回格式异常，请重试",
@@ -415,11 +462,8 @@ async def challenge_judge(
             "suggestions": [],
         }
 
-    return {
-        "success": True,
-        "challenge_id": challenge_id,
-        "judgment": result,
-    }
+    logger.info("POST /api/challenge/judge OK passed=%s", result.get("passed"))
+    return {"success": True, "challenge_id": challenge_id, "judgment": result}
 
 
 @app.post("/api/params/analyze")
@@ -430,7 +474,9 @@ async def params_analyze(
     api_key: str | None = Form(None),
     base_url: str | None = Form(None),
 ):
-    """多张照片参数关联分析。"""
+    """Analyze EXIF parameter patterns across multiple photos."""
+    logger.info("POST /api/params/analyze")
+
     try:
         photos = json.loads(photos_data)
     except json.JSONDecodeError:
@@ -455,52 +501,64 @@ async def params_analyze(
 
 请分析我的拍摄参数规律，并给出改进建议。"""
 
-    engine_provider = provider or os.getenv("DEFAULT_PROVIDER", "anthropic")
-    engine_model = model or os.getenv("DEFAULT_MODEL", "claude-sonnet-4-20250514")
-    engine_api_key = api_key or os.getenv("DEFAULT_API_KEY", "")
-    engine_base_url = base_url or os.getenv("DEFAULT_BASE_URL", "") or None
+    engine_provider, engine_model, engine_api_key, engine_base_url = _resolve_engine(
+        provider, model, api_key, base_url
+    )
+    _validate_engine(engine_provider, engine_api_key)
 
-    if not engine_api_key:
-        raise HTTPException(status_code=400, detail="未配置 API Key")
+    # Text-only call (no image)
+    analysis = await _call_ai(
+        engine_provider, None, None,
+        system_prompt, user_message,
+        engine_model, engine_api_key, engine_base_url,
+    )
 
-    try:
-        if engine_provider == "openai":
-            analysis = await call_openai_vision(
-                image_bytes=None,
-                mime_type=None,
-                system_prompt=system_prompt,
-                user_message=user_message,
-                model=engine_model,
-                api_key=engine_api_key,
-                base_url=engine_base_url,
-            )
-        else:
-            analysis = await call_anthropic_vision(
-                image_bytes=None,
-                mime_type=None,
-                system_prompt=system_prompt,
-                user_message=user_message,
-                model=engine_model,
-                api_key=engine_api_key,
-                base_url=engine_base_url,
-            )
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"AI API 调用失败: {str(e)}")
+    logger.info("POST /api/params/analyze OK photos=%d", len(photos))
+    return {"success": True, "photos_count": len(photos), "analysis": analysis}
 
-    return {
-        "success": True,
-        "photos_count": len(photos),
-        "analysis": analysis,
-    }
+
+@app.post("/api/extract-exif")
+async def extract_exif(image: UploadFile = File(...)):
+    """Extract EXIF data from single photo, no AI call."""
+    logger.info("POST /api/extract-exif filename=%s", image.filename)
+
+    mime_type = image.content_type or "image/jpeg"
+    if mime_type not in ALLOWED_MIME_TYPES:
+        raise HTTPException(status_code=400, detail=f"不支持的文件类型: {mime_type}")
+
+    image_bytes = await image.read()
+    if len(image_bytes) == 0:
+        raise HTTPException(status_code=400, detail="上传的文件为空")
+
+    exif = parse_exif_data(image_bytes)
+    logger.info("POST /api/extract-exif OK exif_keys=%d", len(exif))
+    return {"success": True, "exif": exif}
 
 
 @app.get("/api/health")
 async def health_check():
-    """健康检查接口。"""
-    return {"status": "ok", "service": "Photo Coach API", "version": "1.0.0"}
+    """Health check — liveness + optional readiness probe."""
+    status = {
+        "status": "ok",
+        "service": "Photo Coach API",
+        "version": "1.1.0",
+    }
+    if _shutting_down:
+        status["status"] = "shutting_down"
+    return status
 
 
-# 生产环境：serve 前端 SPA（API 路由未匹配时 fallback 到静态文件）
+@app.get("/api/health/ready")
+async def readiness_check():
+    """Readiness probe — returns 503 if shutting down."""
+    if _shutting_down:
+        raise HTTPException(status_code=503, detail="服务正在关闭")
+    return {"status": "ready", "service": "Photo Coach API", "version": "1.1.0"}
+
+
+# ---------------------------------------------------------------------------
+# Production: serve frontend SPA
+# ---------------------------------------------------------------------------
 if os.getenv("ENVIRONMENT") == "production":
     static_dir = Path(__file__).parent.parent / "frontend" / "dist"
     if static_dir.exists():

@@ -1,23 +1,39 @@
 # Photo Coach — AI 摄影教练
 
-上传照片，AI 自动进行 10 维度摄影诊断（构图、曝光、色彩、对焦、面部表情、眼神、肢体语言等），即时生成结构化诊断报告。
+上传照片，AI 自动进行 10 维度摄影诊断，即时生成结构化诊断报告。支持可视化标注叠加、每日摄影挑战和 EXIF 参数实验室。
+
+## 功能
+
+| 模块 | 说明 |
+|------|------|
+| **AI 诊断** | 上传照片 → 10维度 0-100 分诊断（构图/曝光/色彩/对焦/锐度/白平衡/面部表情/眼神/肢体语言/整体印象） |
+| **可视化诊断** | AI 标注问题区域（过曝/欠曝/模糊/构图），Canvas 半透明叠加 + 九宫格辅助线 |
+| **每日挑战** | 15 个预置摄影挑战任务，按日期轮换，AI 评判达标/未达标 |
+| **参数实验室** | 上传多张照片 → EXIF 提取 → AI 分析光圈/快门/ISO/焦距使用规律 |
+| **引擎切换** | 支持 OpenAI / Anthropic 兼容 API，前端可配置自定义 proxy |
 
 ## 项目结构
 
 ```
 photo-coach/
-├── backend/          # FastAPI 后端
-│   ├── main.py       # API 入口
-│   ├── adapters/     # AI 引擎适配器（OpenAI / Anthropic）
-│   ├── prompts/      # 诊断 Prompt 模板
-│   ├── .env.example  # 内置引擎配置模板
-│   └── requirements.txt
-├── frontend/         # Vite + React PWA 前端
-│   ├── src/
-│   │   ├── pages/        # 上传页 / 报告页
-│   │   ├── components/   # 得分卡 / 诊断区 / 设置
-│   │   └── hooks/        # 设置持久化
-│   └── public/           # manifest / favicon
+├── backend/
+│   ├── main.py              # FastAPI 入口（限流/日志/优雅关闭）
+│   ├── rate_limiter.py      # 滑动窗口限流器（60次/分钟/IP）
+│   ├── logging_config.py    # 结构化日志 + 请求ID追踪
+│   ├── exif_analyzer.py     # EXIF 解析（Pillow）
+│   ├── challenges.py        # 15个预置挑战任务库
+│   ├── adapters/            # AI 适配器（超时/重试/退避）
+│   ├── prompts/             # 诊断 & 挑战评判 Prompt
+│   ├── tests/               # pytest 测试套件（26用例）
+│   ├── requirements.txt
+│   └── .env.example
+├── frontend/
+│   └── src/
+│       ├── pages/           # UploadPage / ReportPage / DailyChallenge / ParamsLab
+│       ├── components/      # ScoreCard / ReportSection / AnnotationOverlay / SettingsModal
+│       ├── hooks/           # useSettings
+│       └── App.jsx          # 路由: / /report /challenge /params
+├── render.yaml              # Render Blueprint 部署配置
 └── README.md
 ```
 
@@ -27,71 +43,62 @@ photo-coach/
 
 ```bash
 cd backend
-
-# 安装依赖
 pip install -r requirements.txt
-
-# 配置内置引擎（复制 .env.example 为 .env 并填写 API Key）
 cp .env.example .env
 # 编辑 .env，填写 DEFAULT_API_KEY
-
-# 启动
 uvicorn main:app --reload --port 8000
 ```
-
-API 接口：`POST http://localhost:8000/api/analyze`
 
 ### 2. 前端
 
 ```bash
 cd frontend
-
-# 安装依赖
 npm install
-
-# 开发模式启动
 npm run dev
 ```
 
-默认启动在 `http://localhost:5173`，API 请求自动代理到 `http://localhost:8000`。
-
-### 3. 生产构建
+### 3. 运行测试
 
 ```bash
-cd frontend
-npm run build   # 输出到 dist/
+cd backend
+pytest tests/test_all.py -v
 ```
 
-## 引擎配置
+## API 接口
 
-### 内置引擎（.env）
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/analyze` | 照片诊断（返回 report/scores/annotations/exif） |
+| GET | `/api/challenge/today` | 今日挑战 |
+| POST | `/api/challenge/judge` | 挑战评判 |
+| POST | `/api/params/analyze` | 多图 EXIF 参数分析 |
+| POST | `/api/extract-exif` | 单图 EXIF 提取 |
+| GET | `/api/health` | 存活检查 |
+| GET | `/api/health/ready` | 就绪检查（关闭中返回 503） |
 
-用户不提供 API Key 时使用：
+## 生产特性
 
-```env
-DEFAULT_PROVIDER=anthropic          # 或 openai
-DEFAULT_MODEL=claude-sonnet-4-20250514
-DEFAULT_API_KEY=sk-xxx              # 你的 API Key
-DEFAULT_BASE_URL=                   # 留空 = 官方默认
-```
+- **限流**: 滑动窗口，60 次/分钟/IP，超限返回 429 + Retry-After
+- **日志**: 结构化 `key=value` 格式，每请求独立 request-id
+- **超时重试**: AI API 调用 120s 超时，5xx/429 自动退避重试（最多 2 次）
+- **优雅关闭**: SIGTERM 信号处理，`/api/health/ready` 返回 503 通知负载均衡摘流
+- **请求追踪**: X-Request-ID 头贯穿所有请求
+- **图片压缩**: 超大上传自动压缩（降质量 → 缩尺寸 → 1024px 兜底）
+- **PWA**: Service Worker + Web Manifest，支持离线访问
 
-### 自定义引擎
+## 环境变量
 
-用户在前端设置中填写自己的 API Key / Base URL / Model，支持任意 OpenAI 或 Anthropic 兼容接口（包括中转站、代理、本地模型）。
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `DEFAULT_PROVIDER` | AI 提供商 (openai/anthropic) | anthropic |
+| `DEFAULT_MODEL` | 模型名称 | claude-sonnet-4-20250514 |
+| `DEFAULT_API_KEY` | API 密钥 | (必填) |
+| `DEFAULT_BASE_URL` | 自定义 API 地址 | (空=官方) |
+| `ENVIRONMENT` | 设为 `production` 时 serve 前端 | (空) |
+| `MAX_IMAGE_SIZE_MB` | 最大上传体积 | 15 |
+| `AI_TIMEOUT_SECONDS` | AI 调用超时 | 120 |
+| `AI_MAX_RETRIES` | AI 调用最大重试 | 2 |
 
-## 技术栈
+## 部署
 
-| 层 | 方案 |
-|---|------|
-| 前端 | Vite + React + react-router-dom |
-| PWA | vite-plugin-pwa |
-| 后端 | FastAPI + httpx |
-| AI 适配 | 纯 HTTP 调用，不依赖官方 SDK |
-| 设计 | 暗色主题，纯 CSS 变量 |
-
-## 支持的 AI 提供商
-
-- **OpenAI 兼容**：OpenAI 官方、Ollama、vLLM、任意 OpenAI 格式中转站
-- **Anthropic 兼容**：Anthropic 官方、prismapi.site、任意 Anthropic 格式中转站
-
-API Key 和 Base URL 均可自定义，无锁定。
+Render Blueprint 一键部署：`render.yaml` 已配置单体 Web Service（serve 前后端），需在 Render Dashboard 手动设置 `DEFAULT_API_KEY` secret。

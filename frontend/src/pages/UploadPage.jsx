@@ -121,6 +121,7 @@ export default function UploadPage() {
 
       // 存到 localStorage 传给报告页
       localStorage.setItem("photo-coach-report", JSON.stringify(data));
+      localStorage.setItem("photo-coach-image", previewUrl);
 
       navigate("/report");
     } catch (err) {
@@ -245,6 +246,25 @@ export default function UploadPage() {
 
       {/* 支持格式 */}
       <p className="format-list">支持 JPEG / PNG / WebP / HEIC，超大图片将自动压缩</p>
+
+      {/* 快捷入口 */}
+      <div className="quick-links">
+        <button className="quick-link-btn" onClick={() => navigate("/challenge")}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <path d="M12 2L2 7l10 5 10-5-10-5z" />
+            <path d="M2 17l10 5 10-5" />
+            <path d="M2 12l10 5 10-5" />
+          </svg>
+          每日挑战
+        </button>
+        <button className="quick-link-btn" onClick={() => navigate("/params")}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+          </svg>
+          参数实验室
+        </button>
+      </div>
 
       {/* 设置按钮 */}
       <button

@@ -80,35 +80,3 @@
 .annotation-empty span {
   font-size: 0.85rem;
 }
-
-/* 可视化诊断 tab 切换 */
-.visual-tabs {
-  display: flex;
-  gap: 0.25rem;
-  margin-top: 1.5rem;
-  margin-bottom: 0;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-btn);
-  overflow: hidden;
-}
-
-.visual-tab {
-  flex: 1;
-  padding: 0.6rem 1rem;
-  background: transparent;
-  color: var(--text-secondary);
-  border-radius: 0;
-  min-height: 40px;
-  font-size: 0.85rem;
-  transition: background var(--transition), color var(--transition);
-}
-
-.visual-tab.active {
-  background: var(--amber);
-  color: #0d0d0d;
-}
-
-.visual-tab:hover:not(.active) {
-  background: var(--card-bg-hover);
-  color: var(--text);
-}
